@@ -3,3 +3,5 @@ with the disk label specified, and then copies the contents of a designated fold
 Parellel file copy allows for a large speed improvement compared to some other solutions that perform a sequential copy.
 
 Be careful, this script will format ALL removable devices attached to the system.
+
+The bootable variant installs syslinux on the drive and sets the active flag on the primary partition.

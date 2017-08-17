@@ -1,5 +1,5 @@
 ﻿# This script formats all removable drives attached to a system,
-# copies the the GeoLink firmware to the newly formatted drives and makes the drives bootable
+# copies the specified folder to the newly formatted drives and makes the drives bootable
 # This version requires admin rights to run the syslinux install script and set the active partition
 
 # Version 0.5

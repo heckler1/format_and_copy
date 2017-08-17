@@ -1,5 +1,5 @@
 ﻿# This script formats all removable drives attached to a system,
-# copies the contents of the specified directory to the newly formatted drives and installs syslinux
+# copies the specified files or directories to the newly formatted drives and installs syslinux
 # This script requires admin rights to install syslinux and set the active partition
 
 # Version 0.6
@@ -49,23 +49,25 @@ workflow ParallelFormat {
         $drives,
         $disk_label
     )
-
-    foreach -parallel ($drive in $drives) {
+    $count = 0
+    foreach -parallel -ThrottleLimit 23 ($drive in $drives) { # Runs up to 23 threads in parallel, due to drive letter limitations
         # Status message
-        echo "Formatting $($drive):\"
-                
+        Write-Output "Formatted $($drive):\"
+              
         try {    
             # Format the drive, throwing an error if the format fails
             InlineScript {Format-Volume -DriveLetter $Using:drive -FileSystem FAT32 -NewFileSystemLabel $Using:disk_label -ErrorAction Stop | Out-Null}
         }
         catch { # If the above command throws an error, do the actions below
             # Status message
-            echo "Formatting $($drive):\ failed"
+            Write-Output "Formatting $($drive):\ failed"
                     
             # Sequence failed drive count
-            $failed_drives++
+            $WORKFLOW:count++
         }
     }
+    # Return the output of the workflow
+    return $count
 }
 
 # Creates a function to install syslinux and set the primary partition as active
@@ -93,18 +95,18 @@ workflow ParallelCopy {
         $source,
         $drives
     )
-
-    foreach -parallel ($drive in $drives) {
+    
+    foreach -parallel -ThrottleLimit 23 ($drive in $drives) { # Runs up to 23 threads in parallel, due to drive letter limitations
         # Status message
         echo "Starting copy to $($drive):\"
                     
         # Runs file copy
-        robocopy $source "$($drive):\" /e /eta /fft # Robocopy will print status messages for every file copied
-        #Copy-Item $source -Destination "$($drive):\" -Recurse # Copy-Item prints no output
+        #robocopy $source "$($drive):\" /e /eta /fft # Robocopy will print status messages for every file copied
+        Copy-Item $source -Destination "$($drive):\" -Recurse -Force # Copy-Item prints no output, but can run more threads at a time
                     
         # Status message
         echo "Done copying to $($drive):\"
-                    
+               
         # Runs function to install syslinux
         MakeBootable -drive $drive
     }
@@ -139,20 +141,20 @@ switch ($result)
         0 {
             # Status Message
             echo "`nBeginning formatting`n"
-            
-            # Initialize variable
-            $failed_drives = 0
 
             # Run the ParallelFormat workflow, passing outside variables into the workflow via parameters
-            ParallelFormat -drives $drives -disk_label $disk_label
+            $format_output = ParallelFormat -drives $drives -disk_label $disk_label
+
+            # Print format status messages
+            echo $format_output[0..($format_output.Count - 2)]
             
             # Status message
-            echo "Formatting complete`n"
-            
+            echo "Formatting complete"
+
             # If any drives failed to format, print an error and exit
-            if ($failed_drives -gt 0) {
+            if ($format_output[-1] -gt 0) {
                 # Status messages
-                echo "`n$failed_drives drive(s) failed to format."
+                echo "`n$($format_output[-1]) drive(s) failed to format."
                 echo "The program will now exit."
                     
                 # Wait for user acknowledgement
@@ -161,7 +163,7 @@ switch ($result)
                 # End program
                 exit
             }
-
+            
             # Status message
             echo "Beginning file copy`n"
 

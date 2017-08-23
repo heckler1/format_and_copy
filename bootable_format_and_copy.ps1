@@ -2,7 +2,7 @@
 # copies the specified folder to the newly formatted drives and makes the drives bootable
 # This version requires admin rights to run the syslinux install script and set the active partition
 
-# Version 0.5
+# Version 0.4.1
 
 # Written by Stephen Heckler
 
@@ -46,7 +46,7 @@ $drives = -split $drives
 
 # Print number of connected drives
 $numberofdrives = $drives.Length
-echo "There will be $numberofdrives drives formatted"
+echo "There will be $numberofdrives drive(s) formatted"
 
 # Status message
 echo "These are the drives that will be formatted:"
@@ -72,27 +72,40 @@ switch ($result)
     {
         0 {
             # Status Message
-            echo "`nBeginning formatting"
+            echo "`nBeginning formatting`n"
+            
+            # Initialize variable
+            $failed_drives = 0
 
+            # Format the drives in sequence
             foreach ($drive in $drives) {
                 # Status message
                 echo "Formatting $($drive):\"
                 
                 try {    
-                    # Format the drive, stopping if there is an error
-                    Format-Volume -DriveLetter $drive -FileSystem FAT32 -NewFileSystemLabel $disk_label -ErrorAction Stop
+                    # Format the drive, throwing an error if the format fails
+                    Format-Volume -DriveLetter $drive -FileSystem FAT32 -NewFileSystemLabel $disk_label -ErrorAction Stop | Out-Null
                 }
                 catch { # If the above command throws an error, do the actions below
-                    # Status messages
+                    # Status message
                     echo "Formatting $($drive):\ failed"
-                    echo "The program will now exit"
                     
-                    # Wait for user acknowledgement
-                    pause
-                    
-                    # End program
-                    exit
+                    # Sequence failed drive count
+                    $failed_drives++
                 }
+            }
+
+            # If any drives failed to format, print an error and exit
+            if ($failed_drives -gt 0) {
+                # Status messages
+                echo "`n$failed_drives drive(s) failed to format."
+                echo "The program will now exit."
+                    
+                # Wait for user acknowledgement
+                pause
+                    
+                # End program
+                exit
             }
 
             # Status message
@@ -136,11 +149,15 @@ switch ($result)
             echo "Copying Complete"
 
             pause
+
+            exit
         }
 
         1 {
             # Goodbye.
-            echo "Goodbye."          
+            echo "Goodbye."
+
+            exit
         }
     }
 

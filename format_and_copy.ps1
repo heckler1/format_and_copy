@@ -1,7 +1,7 @@
-﻿# This script formats all removable drives attached to a system and 
-# then copies the contents of a designated directory to the newly formatted drives
+﻿# This script formats all removable drives attached to a system
+# and copies the specified files or directories to the newly formatted drives
 
-# Version 0.4.1
+# Version 0.5
 
 # Written by Stephen Heckler
 
@@ -12,7 +12,7 @@ $source = ""
 # Enumerates the removable drives attached to the system and gets their root
 $drives = Get-WMIObject win32_volume | ? { $_.DriveType -eq 2 } | % { Get-PSDrive $_.DriveLetter[0] } | Format-List Root | Out-String
 
-# Removes the title of the line
+# Removes the title of each line
 $drives = $drives -replace 'Root : ','' 
 
 # Formats a list of drives
@@ -21,8 +21,55 @@ $list_drives = (-split $drives) -join " "
 # Removes the ":\" after the drive letter
 $drives = $drives -replace ':\\',''
 
-# Converts the array of drives into a list of strings
+# Converts the array of drives into a list of strings - May not be necessary?
 $drives = -split $drives
+
+# Creates a workflow to format the drives in parallel
+workflow ParallelFormat {
+    param(
+        $drives,
+        $disk_label
+    )
+    $count = 0
+    foreach -parallel -ThrottleLimit 23 ($drive in $drives) { # Runs up to 23 threads in parallel, due to drive letter limitations
+        # Status message
+        Write-Output "Formatted $($drive):\"
+
+        try {    
+            # Format the drive, throwing an error if the format fails
+            InlineScript {Format-Volume -DriveLetter $Using:drive -FileSystem FAT32 -NewFileSystemLabel $Using:disk_label -ErrorAction Stop | Out-Null}
+        }
+        catch { # If the above command throws an error, do the actions below
+            # Status message
+            Write-Output "Formatting $($drive):\ failed"
+                    
+            # Sequence failed drive count
+            $WORKFLOW:count++
+        }
+    }
+    # Return the output of the workflow
+    return $count
+}
+
+# Creates a workflow to copy files from the source to the drives in parellel, then makes the drives bootable
+workflow ParallelCopy {
+    param(
+        $source,
+        $drives
+    )
+
+    foreach -parallel -ThrottleLimit 23 ($drive in $drives) { # Runs up to 23 threads in parallel, due to drive letter limitations
+        # Status message
+        echo "Starting copy to $($drive):\"
+
+        # Runs file copy
+        #robocopy $source "$($drive):\" /e /eta /fft # Robocopy will print status messages for every file copied
+        Copy-Item $source -Destination "$($drive):\" -Recurse -Force # Copy-Item prints no output, but can run more threads at a time
+
+        # Status message
+        echo "Done copying to $($drive):\"
+    }
+}
 
 # Print number of connected drives
 $numberofdrives = $drives.Length
@@ -48,87 +95,51 @@ $options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
 # Defines choice menu
 $result = $host.ui.PromptForChoice("Format Drives","Do you want to format these drives?", $options, 1) # Default option is No
 
-switch ($result)
-    {
-        0 {
-            # Status Message
-            echo "`nBeginning formatting`n"
-            
-            # Initialize variable
-            $failed_drives = 0
+switch ($result) {
+    0 {
+        # Status Message
+        echo "`nBeginning formatting`n"
 
-            # Format the drives in sequence
-            foreach ($drive in $drives) {
-                # Status message
-                echo "Formatting $($drive):\"
-                
-                try {    
-                    # Format the drive, throwing an error if the format fails
-                    Format-Volume -DriveLetter $drive -FileSystem FAT32 -NewFileSystemLabel $disk_label -ErrorAction Stop | Out-Null
-                }
-                catch { # If the above command throws an error, do the actions below
-                    # Status message
-                    echo "Formatting $($drive):\ failed"
-                    
-                    # Sequence failed drive count
-                    $failed_drives++
-                }
-            }
+        # Run the ParallelFormat workflow, passing outside variables into the workflow via parameters
+        $format_output = ParallelFormat -drives $drives -disk_label $disk_label
 
-            # If any drives failed to format, print an error and exit
-            if ($failed_drives -gt 0) {
-                # Status messages
-                echo "`n$failed_drives drive(s) failed to format."
-                echo "The program will now exit."
-                    
-                # Wait for user acknowledgement
-                pause
-                    
-                # End program
-                exit
-            }
+        # Print format status messages
+        echo $format_output[0..($format_output.Count - 2)]
 
-            # Status message
-            echo "Formatting complete`n"
+        # Status message
+        echo "Formatting complete"
 
-            # Status message
-            echo "Beginning file copy`n"
-            
-            # Creates a workflow to copy files from the source to the drives in parellel
-            workflow parellelcopy {
-                param(
-                    $source,
-                    $drives
-                    )
+        # If any drives failed to format, print an error and exit
+        if ($format_output[-1] -gt 0) {
+            # Status messages
+            echo "`n$($format_output[-1]) drive(s) failed to format."
+            echo "The program will now exit."
 
-                foreach -parallel ($drive in $drives) {
-                    # Status message
-                    echo "Starting copy to $($drive):\"
-                    
-                    # Runs file copy
-                    robocopy $source "$($drive):\" /e /eta /fft # Robocopy will print status messages for every file copied
-                    #Copy-Item $source -Destination "$($drive):\" -Recurse # Copy-Item prints no output
-                    
-                    # Status message
-                    echo "Done copying to $($drive):\"
-                }
-            }
-
-            # Runs the above workflow, passing outside variables into the workflow as parameters
-            parellelcopy -drives $drives -source $source
-
-            # Status message
-            echo "Copying Complete"
-
+            # Wait for user acknowledgement
             pause
 
+            # End program
             exit
         }
+            
+        # Status message
+        echo "Beginning file copy`n"
 
-        1 {
-            # Goodbye.
-            echo "Goodbye."
+        # Run the ParallelCopy workflow, passing outside variables into the workflow via parameters
+        ParallelCopy -drives $drives -source $source
 
-            exit    
-        }
+        # Status message
+        echo "Copying Complete"
+
+        pause
+
+        exit
     }
+
+    1 {
+        # Goodbye.
+        echo "Goodbye."
+
+        exit
+    }
+}

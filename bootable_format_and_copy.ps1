@@ -1,9 +1,29 @@
-﻿# This script formats all removable drives attached to a system and 
-# then copies the contents of a designated directory to the newly formatted drives
+﻿# This script formats all removable drives attached to a system,
+# copies the specified folder to the newly formatted drives and makes the drives bootable
+# This version requires admin rights to run the syslinux install script and set the active partition
 
-# Version 0.4
+# Version 0.5
 
 # Written by Stephen Heckler
+
+# Check for Admin rights, if not Admin, spawn new elevated PowerShell shell
+param([switch]$Elevated)
+function Check-Admin {
+$currentUser = New-Object Security.Principal.WindowsPrincipal $([Security.Principal.WindowsIdentity]::GetCurrent())
+$currentUser.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
+}
+if ((Check-Admin) -eq $false)  {
+if ($elevated)
+{
+# could not elevate, quit
+}
+ 
+else {
+ 
+Start-Process powershell.exe -Verb RunAs -ArgumentList ('-noprofile -noexit -file "{0}" -elevated' -f ($myinvocation.MyCommand.Definition))
+}
+exit
+}
 
 # Variables
 $disk_label = ""
@@ -53,7 +73,7 @@ switch ($result)
         0 {
             # Status Message
             echo "`nBeginning formatting"
-            
+
             foreach ($drive in $drives) {
                 # Status message
                 echo "Formatting $($drive):\"
@@ -74,19 +94,18 @@ switch ($result)
                     exit
                 }
             }
-            
+
             # Status message
             echo "Formatting complete`n"
 
             # Status message
             echo "Beginning file copy`n"
             
-            # Creates a workflow to copy files from the source to the drives in parellel
+            # Creates a workflow to copy files from the source to the drives in parellel, then makes the drives bootable
             workflow parellelcopy {
                 param(
                     $source,
-                    $drives
-                    )
+                    $drives)
 
                 foreach -parallel ($drive in $drives) {
                     # Status message
@@ -98,6 +117,15 @@ switch ($result)
                     
                     # Status message
                     echo "Done copying to $($drive):\"
+                    
+                    # Runs script to install syslinux
+                    cmd /c "$($drive):\install_mbr.cmd"
+                    
+                    # Status message
+                    echo "Setting partition on $($drive):\ as active"
+                    
+                    # Set partition as active
+                    Set-Partition -DriveLetter $drive -IsActive 1
                 }
             }
 
@@ -106,6 +134,7 @@ switch ($result)
 
             # Status message
             echo "Copying Complete"
+
             pause
         }
 

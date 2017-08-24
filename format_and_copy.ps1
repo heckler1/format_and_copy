@@ -68,6 +68,15 @@ function USBForm {
     $button6.Text = "Create Type 6 USBs"
     $form.Controls.Add($button6)
 
+    # Create exit button
+    $button_exit = New-Object System.Windows.Forms.Button
+    $button_exit.Size = New-Object System.Drawing.Size(54,27)
+    $button_exit.Location = New-Object System.Drawing.Size(25,505)
+    $button_exit.Add_Click({$form.Close()})
+    $button_exit.Text = "Exit"
+    $button_exit.Font = New-Object System.Drawing.Font("Geneva",11)
+    $form.Controls.Add($button_exit)
+
     # Create output message box
     $messagebox = New-Object System.Windows.Forms.RichTextBox
     $messagebox.Size = New-Object System.Drawing.Size(400,550)
